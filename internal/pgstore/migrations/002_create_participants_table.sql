@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS participants (
 
     FOREIGN KEY (trip_id) REFERENCES trips(id)
         ON UPDATE CASCADE
-        ON DELETE CASCADE,
+        ON DELETE CASCADE
 );
 
 ---- create above / drop below ----
