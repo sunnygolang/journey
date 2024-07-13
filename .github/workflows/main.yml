@@ -15,4 +15,4 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build Docker Image
-        uses: docker build -t sunnygolang/journey:latest .
+        run: docker build -t sunnygolang/journey:latest .
