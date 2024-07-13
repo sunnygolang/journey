@@ -26,5 +26,22 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build Docker Image
-        run: docker build -t sunnygolang/journey:${{ steps.generate_sha.outputs.sha }} .
+      - name: Docker Build and Push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            sunnygolang/journey:${{ steps.generate_sha.outputs.sha }}
+            sunnygolang/journey:latest
+
+
+#      - name: Build Docker Image
+#        run: docker build -t sunnygolang/journey:${{ steps.generate_sha.outputs.sha }} .
+
+#      - name: Push Image
+#        run: |
+#          docker push sunnygolang/journey:${{ steps.generate_sha.outputs.sha }}
+#          docker tag sunnygolang/journey:${{ steps.generate_sha.outputs.sha }} sunnygolang/journey:latest
+#          docker push sunnygolang/journey:latest
+
