@@ -5,11 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/mail"
+	"strings"
 	"time"
 
+	openapi_types "github.com/discord-gophers/goapi-gen/types"
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
+	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/sunnygolang/journey/internal/api/spec"
@@ -25,6 +30,10 @@ type store interface {
 	GetParticipant(ctx context.Context, participantID uuid.UUID) (pgstore.Participant, error)
 	ConfirmParticipant(ctx context.Context, participantID uuid.UUID) error
 	CreateTrip(ctx context.Context, pool *pgxpool.Pool, params spec.CreateTripRequest) (uuid.UUID, error)
+	GetTripLinks(ctx context.Context, tripID uuid.UUID) ([]pgstore.Link, error)
+	CreateTripLink(ctx context.Context, arg pgstore.CreateTripLinkParams) (uuid.UUID, error)
+	GetParticipants(ctx context.Context, tripID uuid.UUID) ([]pgstore.Participant, error)
+	InviteParticipantToTrip(ctx context.Context, arg pgstore.InviteParticipantToTripParams) (uuid.UUID, error)
 }
 
 type mailer interface {
@@ -297,23 +306,149 @@ func (api API) GetTripsTripIDConfirm(w http.ResponseWriter, r *http.Request, tri
 // Invite someone to the trip.
 // (POST /trips/{tripId}/invites)
 func (api API) PostTripsTripIDInvites(w http.ResponseWriter, r *http.Request, tripID string) *spec.Response {
-	panic("not implemented") // TODO: Implement
+	id, err := uuid.Parse(tripID)
+	if err != nil {
+		return spec.PostTripsTripIDInvitesJSON400Response(spec.Error{Message: "invalid uuid passed: " + err.Error()})
+	}
+
+	var body spec.PostTripsTripIDInvitesJSONBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		return spec.PostTripsTripIDInvitesJSON400Response(spec.Error{Message: err.Error()})
+	}
+
+	participantID, err := api.store.InviteParticipantToTrip(r.Context(), pgstore.InviteParticipantToTripParams{
+		TripID: id,
+		Email:  string(body.Email),
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return spec.PostTripsTripIDInvitesJSON400Response(spec.Error{Message: "trip not found"})
+		}
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) {
+			if pgErr.Code == pgerrcode.UniqueViolation {
+				return spec.PostTripsTripIDInvitesJSON400Response(spec.Error{Message: "participant already invited"})
+			}
+		}
+		api.logger.Error(
+			"failed to invite participant to trip",
+			zap.Error(err),
+			zap.String("trip_id", tripID),
+			zap.String("participant_email", string(body.Email)),
+		)
+		return spec.PostTripsTripIDInvitesJSON400Response(spec.Error{Message: "something went wrong, try again"})
+	}
+
+	go func() {
+		if err := api.mailer.SendTripConfirmedEmail(id, participantID); err != nil {
+			api.logger.Error(
+				"failed to send trip confirmed email",
+				zap.Error(err),
+				zap.String("participant_id", participantID.String()),
+				zap.String("trip_id", tripID),
+			)
+		}
+	}()
+
+	return spec.PostTripsTripIDInvitesJSON201Response(nil)
 }
 
 // Get a trip links.
 // (GET /trips/{tripId}/links)
 func (api API) GetTripsTripIDLinks(w http.ResponseWriter, r *http.Request, tripID string) *spec.Response {
-	panic("not implemented") // TODO: Implement
+	id, err := uuid.Parse(tripID)
+	if err != nil {
+		return spec.GetTripsTripIDLinksJSON400Response(spec.Error{Message: "invalid uuid passed: " + err.Error()})
+	}
+
+	links, err := api.store.GetTripLinks(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return spec.GetTripsTripIDLinksJSON400Response(spec.Error{Message: "trip not found"})
+		}
+		api.logger.Error("failed to find trip links", zap.Error(err), zap.String("trip_id", tripID))
+		return spec.GetTripsTripIDLinksJSON400Response(spec.Error{Message: "something went wrong, try again"})
+	}
+
+	var output spec.GetLinksResponse
+
+	for _, link := range links {
+		output.Links = append(output.Links, spec.GetLinksResponseArray{
+			ID:    link.ID.String(),
+			Title: link.Title,
+			URL:   link.Url,
+		})
+	}
+
+	return spec.GetTripsTripIDLinksJSON200Response(output)
 }
 
 // Create a trip link.
 // (POST /trips/{tripId}/links)
 func (api API) PostTripsTripIDLinks(w http.ResponseWriter, r *http.Request, tripID string) *spec.Response {
-	panic("not implemented") // TODO: Implement
+	id, err := uuid.Parse(tripID)
+	if err != nil {
+		return spec.PostTripsTripIDLinksJSON400Response(spec.Error{Message: "invalid uuid passed: " + err.Error()})
+	}
+
+	var body spec.PostTripsTripIDLinksJSONBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		return spec.PostTripsTripIDLinksJSON400Response(spec.Error{Message: err.Error()})
+	}
+
+	linkID, err := api.store.CreateTripLink(r.Context(), pgstore.CreateTripLinkParams{
+		TripID: id,
+		Title:  body.Title,
+		Url:    body.URL,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return spec.PostTripsTripIDLinksJSON400Response(spec.Error{Message: "trip not found"})
+		}
+		api.logger.Error("failed to find trip participants", zap.Error(err), zap.String("trip_id", tripID))
+		return spec.PostTripsTripIDActivitiesJSON400Response(spec.Error{Message: "something went wrong, try again"})
+	}
+
+	return spec.PostTripsTripIDLinksJSON201Response(spec.CreateLinkResponse{LinkID: linkID.String()})
 }
 
 // Get a trip participants.
 // (GET /trips/{tripId}/participants)
 func (api API) GetTripsTripIDParticipants(w http.ResponseWriter, r *http.Request, tripID string) *spec.Response {
-	panic("not implemented") // TODO: Implement
+	id, err := uuid.Parse(tripID)
+	if err != nil {
+		return spec.GetTripsTripIDParticipantsJSON400Response(
+			spec.Error{Message: "invalid uuid passed: " + err.Error()},
+		)
+	}
+
+	participants, err := api.store.GetParticipants(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return spec.GetTripsTripIDParticipantsJSON400Response(spec.Error{Message: "trip not found"})
+		}
+		api.logger.Error("failed to find trip participants", zap.Error(err), zap.String("trip_id", tripID))
+		return spec.GetTripsTripIDParticipantsJSON400Response(spec.Error{Message: "something went wrong, try again"})
+	}
+
+	var output spec.GetTripParticipantsResponse
+
+	output.Participants = make([]spec.GetTripParticipantsResponseArray, len(participants))
+
+	for i, p := range participants {
+		var name string
+		parsedEmail, err := mail.ParseAddress(p.Email)
+		if err == nil {
+			addr := parsedEmail.Address
+			name = addr[:strings.Index(addr, "@")]
+		}
+		output.Participants[i] = spec.GetTripParticipantsResponseArray{
+			Email:       openapi_types.Email(p.Email),
+			ID:          p.ID.String(),
+			IsConfirmed: p.IsConfirmed,
+			Name:        &name,
+		}
+	}
+
+	return spec.GetTripsTripIDParticipantsJSON200Response(output)
 }
