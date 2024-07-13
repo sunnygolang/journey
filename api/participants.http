@@ -1,0 +1,2 @@
+# Confirms a Participant on a Trip
+PATCH  http://localhost:8080/participants/:participantId/confirm

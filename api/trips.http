@@ -1,0 +1,93 @@
+# Create a New Trip
+POST http://localhost:8080/trips
+Content-Type: application/json
+
+{
+    "destination": "East Blue",
+    "starts_at": "2024-07-25T21:51:54.00Z",
+    "ends_at": "2024-07-30T21:51:54.00Z",
+    "emails_to_invite": [
+        "guest1@email.com",
+        "guest2@email.com"
+    ],
+    "owner_name": "Eduardo Alexandre",
+    "owner_email": "eduardo@email.com"
+}
+
+###
+
+# Get a Trip Details
+GET http://localhost:8080/trips/:tripId
+
+
+###
+
+# Get a Trip Participants
+GET http://localhost:8080/trips/:tripId/participants
+
+
+###
+
+# Confirm a Trip and send email invitations
+GET http://localhost:8080/trips/:tripId/confirm
+
+
+###
+
+# Invite someone to Trip
+POST http://localhost:8080/trips/:tripId/invites
+Content-Type: application/json
+
+{
+    "email": "guest3@email.com"
+}
+
+
+###
+
+# Create a Trip Activity
+POST http://localhost:8080/trips/:tripId/activities
+Content-Type: application/json
+
+{
+    "occurs_at": "2024-07-25T21:51:54.00Z",
+    "title": "Activity 1"
+}
+
+
+###
+
+# Get a Trip Activities
+GET http://localhost:8080/trips/:tripId/activities
+
+
+###
+
+# Create a Trip Link
+POST http://localhost:8080/trips/:tripId/links
+Content-Type: application/json
+
+{
+    "title": "Link 1",
+    "url": "github.com"
+}
+
+
+###
+
+# Get a Trip Links
+
+GET http://localhost:8080/trips/:tripId/links
+
+
+###
+
+# Update a Trip
+PUT  http://localhost:8080/trips/:tripId
+Content-Type: application/json
+
+{
+    "destination": "East Blue Updated",
+    "starts_at": "2024-08-25T21:51:54.00Z",
+    "ends_at": "2024-08-30T21:51:54.00Z"
+}
