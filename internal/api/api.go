@@ -21,16 +21,21 @@ type store interface {
 	CreateTrip(ctx context.Context, pool *pgxpool.Pool, params spec.CreateTripRequest) (uuid.UUID, error)
 }
 
+type mailer interface {
+	SendConfirmTripEmailToTripOwner(tripID uuid.UUID) error
+}
+
 type API struct {
 	store     store
 	logger    *zap.Logger
 	validator *validator.Validate
 	pool      *pgxpool.Pool
+	mailer    mailer
 }
 
-func NewAPI(pool *pgxpool.Pool, logger *zap.Logger) API {
+func NewAPI(pool *pgxpool.Pool, logger *zap.Logger, mailer mailer) API {
 	validator := validator.New(validator.WithRequiredStructEnabled())
-	return API{pgstore.New(pool), logger, validator, pool}
+	return API{pgstore.New(pool), logger, validator, pool, mailer}
 }
 
 // Confirms a participant on a trip.

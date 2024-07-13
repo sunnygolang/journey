@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/sunnygolang/journey/internal/api"
 	"github.com/sunnygolang/journey/internal/api/spec"
+	"github.com/sunnygolang/journey/internal/mailer/mailpit"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -61,7 +62,7 @@ func run(ctx context.Context) error {
 		return err
 	}
 
-	si := api.NewAPI(pool, logger)
+	si := api.NewAPI(pool, logger, mailpit.NewMailPit(pool))
 	r := chi.NewMux()
 	r.Use(middleware.RequestID, middleware.Recoverer)
 	r.Mount("/", spec.Handler(&si))
