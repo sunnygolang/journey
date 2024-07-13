@@ -21,6 +21,7 @@ type store interface {
 	GetTrip(ctx context.Context, id uuid.UUID) (pgstore.Trip, error)
 	UpdateTrip(ctx context.Context, arg pgstore.UpdateTripParams) error
 	GetTripActivities(ctx context.Context, tripID uuid.UUID) ([]pgstore.Activity, error)
+	CreateActivity(ctx context.Context, arg pgstore.CreateActivityParams) (uuid.UUID, error)
 	GetParticipant(ctx context.Context, participantID uuid.UUID) (pgstore.Participant, error)
 	ConfirmParticipant(ctx context.Context, participantID uuid.UUID) error
 	CreateTrip(ctx context.Context, pool *pgxpool.Pool, params spec.CreateTripRequest) (uuid.UUID, error)
@@ -224,7 +225,30 @@ func (api API) GetTripsTripIDActivities(w http.ResponseWriter, r *http.Request, 
 // Create a trip activity.
 // (POST /trips/{tripId}/activities)
 func (api API) PostTripsTripIDActivities(w http.ResponseWriter, r *http.Request, tripID string) *spec.Response {
-	panic("not implemented") // TODO: Implement
+	id, err := uuid.Parse(tripID)
+	if err != nil {
+		return spec.PostTripsTripIDActivitiesJSON400Response(spec.Error{Message: "invalid uuid passed: " + err.Error()})
+	}
+
+	var body spec.PostTripsTripIDActivitiesJSONBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		return spec.PostTripsTripIDActivitiesJSON400Response(spec.Error{Message: err.Error()})
+	}
+
+	activityID, err := api.store.CreateActivity(r.Context(), pgstore.CreateActivityParams{
+		TripID:   id,
+		Title:    body.Title,
+		OccursAt: pgtype.Timestamp{Time: body.OccursAt, Valid: true},
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return spec.PostTripsTripIDActivitiesJSON400Response(spec.Error{Message: "trip not found"})
+		}
+		api.logger.Error("failed to find trip participants", zap.Error(err), zap.String("trip_id", tripID))
+		return spec.PostTripsTripIDActivitiesJSON400Response(spec.Error{Message: "something went wrong, try again"})
+	}
+
+	return spec.PostTripsTripIDActivitiesJSON201Response(spec.CreateActivityResponse{ActivityID: activityID.String()})
 }
 
 // Confirm a trip and send e-mail invitations.
